@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Juego del Ave Saltarina</title>
+    <style>
+        canvas {
+            display: block;
+            margin: 0 auto;
+            background-color: #87CEEB; /* Azul cielo */
+            background-image: url('paisaje.jpg'); /* Ruta de la imagen de fondo */
+        }
+    </style>
+</head>
+<body>
+    <canvas id="gameCanvas" width="1500" height="600"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        const birdImg = new Image();
+        birdImg.src = 'angry2.PNG';
+
+        const cloudImg = new Image();
+        cloudImg.src = 'nube11.PNG'; // Asegúrate de tener esta imagen en tu directorio
+
+        const bird = {
+            x: 50,
+            y: 300,
+            width: 30,
+            height: 30,
+            gravity: 0.5,
+            lift: -10,
+            velocityY: 0,
+            velocityX: 2
+        };
+
+        let obstacles = [];
+        const obstacleWidth = 70; // Hacer el tronco más ancho
+        const obstacleGap = 150;
+        let hearts = [];
+        const heartSize = 20;
+        let clouds = [];
+        const cloudSize = { width: 100, height: 50 };
+        let frameCount = 0;
+        let isGameOver = false;
+        let lives = 3;
+        let score = 0;
+        let level = 1;
+
+        const speed = 4;
+
+        function drawBird() {
+            ctx.drawImage(birdImg, bird.x, bird.y, bird.width, bird.height);
+        }
+
+        function drawObstacles() {
+            obstacles.forEach(obstacle => {
+                // Dibujar el tronco del árbol (parte inferior del obstáculo)
+                ctx.fillStyle = 'brown';
+                ctx.fillRect(obstacle.x, canvas.height - obstacle.bottomHeight, obstacleWidth, obstacle.bottomHeight);
+
+                // Dibujar las copas de los árboles (círculos verdes en la parte superior del tronco)
+                ctx.fillStyle = 'green';
+                const circleRadiusX = obstacleWidth / 1.5; // Hacer los círculos más anchos
+                const circleRadiusY = obstacleWidth / 2; // Hacer los círculos más altos
+
+                ctx.beginPath();
+                ctx.ellipse(obstacle.x + obstacleWidth / 2, canvas.height - obstacle.bottomHeight, circleRadiusX, circleRadiusY, 0, 0, Math.PI * 2);
+                ctx.ellipse(obstacle.x + obstacleWidth / 4, canvas.height - obstacle.bottomHeight - circleRadiusY / 2, circleRadiusX, circleRadiusY, 0, 0, Math.PI * 2);
+                ctx.ellipse(obstacle.x + (3 * obstacleWidth) / 4, canvas.height - obstacle.bottomHeight - circleRadiusY / 2, circleRadiusX, circleRadiusY, 0, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Dibujar el obstáculo superior, más corto
+                ctx.fillStyle = 'green';
+                ctx.fillRect(obstacle.x, 0, obstacleWidth, obstacle.topHeight - 30); // Ajustar la altura del obstáculo superior
+            });
+        }
+
+        function drawHearts() {
+            ctx.fillStyle = 'red';
+            for (let i = 0; i < lives; i++) {
+                ctx.beginPath();
+                ctx.moveTo(20 + (heartSize + 10) * i, 20 + heartSize / 4);
+                ctx.arc(20 + (heartSize + 10) * i + heartSize / 4, 20, heartSize / 4, 0, Math.PI, true);
+                ctx.arc(20 + (heartSize + 10) * i + 3 * heartSize / 4, 20, heartSize / 4, 0, Math.PI, true);
+                ctx.lineTo(20 + (heartSize + 10) * i + heartSize / 2, 20 + heartSize);
+                ctx.closePath();
+                ctx.fill();
+            }
+        }
+
+        function drawClouds() {
+            clouds.forEach(cloud => {
+                ctx.drawImage(cloudImg, cloud.x, cloud.y, cloudSize.width, cloudSize.height);
+            });
+        }
+
+        function updateObstacles() {
+            if (frameCount % 90 === 0) {
+                const topHeight = Math.random() * (canvas.height / 3); // Hacer el obstáculo superior un poco más alto
+                const bottomHeight = Math.random() * (canvas.height / 2);
+                obstacles.push({
+                    x: canvas.width,
+                    topHeight: topHeight,
+                    bottomHeight: bottomHeight
+                });
+            }
+
+            obstacles.forEach(obstacle => {
+                obstacle.x -= speed + level;
+
+                if (!obstacle.passed && obstacle.x + obstacleWidth < bird.x) {
+                    obstacle.passed = true;
+                    score += 1;
+                }
+            });
+
+            obstacles = obstacles.filter(obstacle => obstacle.x + obstacleWidth > 0);
+        }
+
+        function updateHearts() {
+            if (frameCount % 300 === 0) {
+                const heartY = Math.random() * (canvas.height - heartSize);
+                hearts.push({
+                    x: canvas.width,
+                    y: heartY
+                });
+            }
+
+            hearts.forEach(heart => {
+                heart.x -= speed + level;
+            });
+
+            hearts = hearts.filter(heart => heart.x + heartSize > 0);
+        }
+
+        function updateClouds() {
+            if (frameCount % 150 === 0) {
+                const cloudY = Math.random() * (canvas.height / 3); // Posiciona las nubes en el tercio superior del canvas
+                clouds.push({
+                    x: canvas.width,
+                    y: cloudY
+                });
+            }
+
+            clouds.forEach(cloud => {
+                cloud.x -= speed / 2; // Las nubes se mueven más lentamente
+            });
+
+            clouds = clouds.filter(cloud => cloud.x + cloudSize.width > 0);
+        }
+
+        function checkCollision() {
+            obstacles.forEach(obstacle => {
+                if (
+                    bird.x < obstacle.x + obstacleWidth &&
+                    bird.x + bird.width > obstacle.x &&
+                    (bird.y < obstacle.topHeight - 30 || bird.y + bird.height > canvas.height - obstacle.bottomHeight)
+                ) {
+                    loseLife();
+                }
+            });
+
+            if (bird.y + bird.height > canvas.height || bird.y < 0) {
+                loseLife();
+            }
+        }
+
+        function checkHeartCollection() {
+            hearts.forEach((heart, index) => {
+                if (bird.x < heart.x + heartSize &&
+                    bird.x + bird.width > heart.x &&
+                    bird.y < heart.y + heartSize &&
+                    bird.y + bird.height > heart.y) {
+                    hearts.splice(index, 1);
+                    if (lives < 3) {
+                        lives++;
+                    }
+                    score += 10;
+                }
+            });
+        }
+
+        function updateBird() {
+            bird.velocityY += bird.gravity;
+            bird.y += bird.velocityY;
+
+            bird.x += bird.velocityX;
+
+            if (bird.y + bird.height > canvas.height) {
+                bird.y = canvas.height - bird.height;
+                bird.velocityY = 0;
+            }
+
+            if (bird.y < 0) {
+                bird.y = 0;
+                bird.velocityY = 0;
+            }
+
+            if (bird.x > canvas.width) {
+                bird.x = 50;
+                obstacles = [];
+                hearts = [];
+                clouds = [];
+                frameCount = 0;
+                score += 100;
+                if (score >= 30) {
+                    level++;
+                    score -= 30;
+                }
+            }
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
+
+        function drawGameOver() {
+            ctx.fillStyle = 'red';
+            ctx.font = '48px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Game Over', canvas.width / 2, canvas.height / 2);
+            ctx.font = '24px sans-serif';
+            ctx.fillText(`Puntuación: ${score}`, canvas.width / 2, canvas.height / 2 + 50);
+        }
+
+        function drawScoreAndLevel() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'; // Fondo semi-transparente para el texto
+            ctx.fillRect(canvas.width - 250, 20, 230, 80); // Fondo del texto
+
+            ctx.fillStyle = 'white'; // Texto en blanco
+            ctx.font = '24px Arial'; // Cambia la fuente a Arial
+            ctx.fillText(`Puntuación: ${score}`, canvas.width - 240, 50); // Puntuación
+            ctx.fillText(`Nivel: ${level}`, canvas.width - 240, 80); // Nivel
+        }
+
+        function loseLife() {
+            lives--;
+            if (lives <= 0) {
+                isGameOver = true;
+            } else {
+                resetGame();
+            }
+        }
+
+        function resetGame() {
+            bird.y = 300;
+            bird.velocityY = 0;
+            bird.x = 50;
+            obstacles = [];
+            hearts = [];
+            clouds = [];
+            frameCount = 0;
+            isGameOver = false;
+        }
+
+        function updateCanvas() {
+            if (isGameOver) {
+                drawGameOver();
+                return;
+            }
+
+            frameCount++;
+            clearCanvas();
+            updateObstacles();
+            updateHearts();
+            updateClouds();
+            updateBird();
+            checkCollision();
+            checkHeartCollection();
+            drawObstacles();
+            drawHearts();
+            drawClouds();
+            drawBird();
+            drawScoreAndLevel();
+
+            requestAnimationFrame(updateCanvas);
+        }
+
+        function jump() {
+            bird.velocityY = bird.lift;
+        }
+
+        window.addEventListener('keydown', function(event) {
+            if (event.code === 'Space') {
+                jump();
+            }
+        });
+
+        updateCanvas();
+    </script>
+</body>
+</html>
